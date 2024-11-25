@@ -5,6 +5,47 @@ import numpy as np
 from PIL import Image
 
 
+# Color transformation formulae courtesy of https://www.easyrgb.com/en/math.php
+# Transforming from RGB to CIE L*a*b* colorspace makes it easier to calculate
+# differences in color that map more to how we perceive differences in color
+def rgb2xyz(rgb):
+    nrgb = rgb / 255
+
+    positive_mask = nrgb > 0.04045
+    nrgb[positive_mask] = ((nrgb[positive_mask] + 0.055)  / 1.055) ** 2.4
+    negative_mask = ~positive_mask
+    nrgb[negative_mask] = nrgb[negative_mask] / 12.92
+
+    nrgb *= 100
+
+    x = nrgb[:, :, 0] * 0.4124 + nrgb[:, :, 1] * 0.3576 + nrgb[:, :, 2] * 0.1805
+    y = nrgb[:, :, 0] * 0.2126 + nrgb[:, :, 1] * 0.7152 + nrgb[:, :, 2] * 0.0722
+    z = nrgb[:, :, 0] * 0.0193 + nrgb[:, :, 1] * 0.1192 + nrgb[:, :, 2] * 0.9505
+
+    return np.array([x, y, z]).transpose(1, 2, 0)
+
+
+def xyz2lab(xyz):
+    # Observer = 2deg, Illuminant: D65
+    ref = np.array([95.047, 100.0, 108.883])
+    nxyz = xyz / ref[None, None, :]
+
+    positive_mask = nxyz > 0.008856
+    nxyz[positive_mask] = nxyz[positive_mask] ** (1.0 / 3.0)
+    negative_mask = ~positive_mask
+    nxyz[negative_mask] = (nxyz[negative_mask] * 7.787) + (16.0 / 116.0)
+
+    cie_l = 116.0 * nxyz[:, :, 1] - 16.0
+    cie_a = 500.0 * (nxyz[:, :, 0] - nxyz[:, :, 1])
+    cie_b = 200.0 * (nxyz[:, :, 1] - nxyz[:, :, 2])
+
+    return np.array([cie_l, cie_a, cie_b]).transpose(1, 2, 0)
+
+
+def rgb2lab(rgb):
+    return xyz2lab(rgb2xyz(rgb))
+
+
 def make_anim_sheet(
     frame_width: int, frame_height: int,
     output_fname: str,
@@ -13,6 +54,10 @@ def make_anim_sheet(
     """
     Make an animation sheet that turns the current model into a
     series of pixelated animation frames.
+
+    It assumes that the given scene has cameras named
+    "view-xxx", where xxx is any number, and will generate frames
+    for every camera.
     """
 
     bpy.context.scene.render.resolution_x = frame_width
@@ -58,54 +103,26 @@ def make_anim_sheet(
 
 
 def snap_panorama(
-        frame_width: int, frame_height: int,
-        fname_prefix: str,
-        chroma_pct: float = 20.0,
-        file_ext: str = "pgn"
+    frame_width: int, frame_height: int,
+    fname_prefix: str,
+    chroma_pct: float = 20.0,
+    file_ext: str = "png"
 ):
-    camera_names = sorted([
+    """
+    Go through every camera and generate spritesheets from
+    every single view.
+    """
+    cameras = sorted([
         int(k.split("-")[1])
-        for k in bpy.context.scene.objects.keys() if k.beginswith("view-")
+        for k in bpy.context.scene.objects.keys() if k.startswith("view-")
     ])
 
-
-
-# Color transformation formulae courtesy of https://www.easyrgb.com/en/math.php
-# Transforming from RGB to CIE L*a*b* colorspace makes it easier to calculate
-# differences in color that map more to how we perceive differences in color
-def rgb2xyz(rgb):
-    nrgb = rgb / 255
-
-    positive_mask = nrgb > 0.04045
-    nrgb[positive_mask] = ((nrgb[positive_mask] + 0.055)  / 1.055) ** 2.4
-    negative_mask = ~positive_mask
-    nrgb[negative_mask] = nrgb[negative_mask] / 12.92
-
-    nrgb *= 100
-
-    x = nrgb[:, :, 0] * 0.4124 + nrgb[:, :, 1] * 0.3576 + nrgb[:, :, 2] * 0.1805
-    y = nrgb[:, :, 0] * 0.2126 + nrgb[:, :, 1] * 0.7152 + nrgb[:, :, 2] * 0.0722
-    z = nrgb[:, :, 0] * 0.0193 + nrgb[:, :, 1] * 0.1192 + nrgb[:, :, 2] * 0.9505
-
-    return np.array([x, y, z]).transpose(1, 2, 0)
-
-
-def xyz2lab(xyz):
-    # Observer = 2deg, Illuminant: D65
-    ref = np.array([95.047, 100.0, 108.883])
-    nxyz = xyz / ref[None, None, :]
-
-    positive_mask = nxyz > 0.008856
-    nxyz[positive_mask] = nxyz[positive_mask] ** (1.0 / 3.0)
-    negative_mask = ~positive_mask
-    nxyz[negative_mask] = (nxyz[negative_mask] * 7.787) + (16.0 / 116.0)
-
-    cie_l = 116.0 * nxyz[:, :, 1] - 16.0
-    cie_a = 500.0 * (nxyz[:, :, 0] - nxyz[:, :, 1])
-    cie_b = 200.0 * (nxyz[:, :, 1] - nxyz[:, :, 2])
-
-    return np.array([cie_l, cie_a, cie_b]).transpose(1, 2, 0)
-
-
-def rgb2lab(rgb):
-    return xyz2lab(rgb2xyz(rgb))
+    for cam_num in cameras:
+        bpy.context.scene.camera = bpy.context.scene.objects[f"view-{cam_num}"]
+        fname = f"{fname_prefix}-view-{cam_num}.{file_ext}"
+        make_anim_sheet(
+            frame_width,
+            frame_height,
+            fname,
+            chroma_pct
+        )
