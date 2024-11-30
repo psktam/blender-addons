@@ -1,12 +1,13 @@
+import arguably
 import os
 import re
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-import numpy as np
 from PIL import Image
 
 
+@arguably.command
 def make_spritesheets(individual_sprite_dir, output_dir):
     """
     Given a directory of individual sprites representing views of
@@ -157,7 +158,11 @@ def _squarify(sizes):
     return output_array, output_size
 
 
-def _plot_rectangles(sizes, idx_array):
+def plot_rectangles(sizes, idx_array):
+    """
+    Debugging function that you can use to check the output of
+    the squarify function.
+    """
     anchor = (0, 0)
     fig, ax = plt.subplots()
     for row in idx_array:
@@ -172,3 +177,7 @@ def _plot_rectangles(sizes, idx_array):
         anchor = (0, anchor[1] + max_height)
     ax.set_aspect("equal", adjustable="box")
     return fig, ax
+
+
+if __name__ == "__main__":
+    arguably.run()
